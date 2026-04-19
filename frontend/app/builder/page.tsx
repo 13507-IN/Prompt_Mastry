@@ -45,7 +45,8 @@ export default function BuilderPage() {
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/questions');
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const response = await fetch(`${apiUrl}/api/questions`);
         const data = await response.json();
         setQuestions(data);
       } catch (error) {
@@ -94,8 +95,9 @@ export default function BuilderPage() {
   const handleSubmit = async () => {
     try {
       setSubmitting(true);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-      const createResponse = await fetch('http://localhost:5000/api/projects', {
+      const createResponse = await fetch(`${apiUrl}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,7 +109,7 @@ export default function BuilderPage() {
 
       if (createResponse.ok) {
         const project = await createResponse.json();
-        const generateAndSaveResponse = await fetch('http://localhost:5000/api/generate/save', {
+        const generateAndSaveResponse = await fetch(`${apiUrl}/api/generate/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -128,7 +130,7 @@ export default function BuilderPage() {
         console.warn('Project create failed, falling back to preview mode:', createError);
       }
 
-      const previewResponse = await fetch('http://localhost:5000/api/generate', {
+      const previewResponse = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
