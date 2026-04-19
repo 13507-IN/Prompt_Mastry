@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Project {
+  id                 String   @id @default(cuid())
+  title              String
+  description        String?
+  projectType        String
+  useAI              Boolean  @default(true)
+  projectName        String?
+  colorPalette       String?
+  navbarPosition     String?
+  pageCount          Int      @default(1)
+  uiPreferences      String?
+  dbProvider         String?
+  ormChoice          String?
+  authRequired       Boolean  @default(false)
+  apiType            String?
+  additionalFeatures String?
+  generatedPrompt    String?
+  recommendations    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
