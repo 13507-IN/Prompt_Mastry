@@ -10,47 +10,113 @@ interface FormData {
   projectType?: string;
   useAI?: boolean;
   projectName?: string;
+  projectType_custom?: string;
   colorPalette?: string;
+  colorPalette_custom?: string;
   navbarPosition?: string;
+  navbarPosition_custom?: string;
   pageCount?: number;
+  pageCount_custom?: string;
   framework?: string;
+  framework_custom?: string;
   uiLibrary?: string;
+  uiLibrary_custom?: string;
   dbProvider?: string;
+  dbProvider_custom?: string;
   ormChoice?: string;
+  ormChoice_custom?: string;
   authRequired?: boolean;
+  authRequired_custom?: string;
   apiType?: string;
+  apiType_custom?: string;
   runtime?: string;
+  runtime_custom?: string;
   deploymentPlatform?: string;
+  deploymentPlatform_custom?: string;
   additionalFeatures?: string[];
+  additionalFeatures_custom?: string;
+  generationMode?: 'quick' | 'balanced' | 'strict-spec';
+}
+
+interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Array<{ field?: string; message?: string }>;
+  };
 }
 
 interface Question {
   id: keyof FormData | string;
   question: string;
   type: 'mcq' | 'text' | 'multi-select' | string;
+  required?: boolean;
   options?: Array<{ value: PrimitiveOptionValue; label: string }>;
   placeholder?: string;
+  showWhen?: {
+    field: keyof FormData | string;
+    values?: PrimitiveOptionValue[];
+  };
+}
+
+interface QuestionsApiResponse {
+  questions: Record<string, Question[]>;
+  contract?: {
+    requiredByStep?: Record<string, string[]>;
+    generationModes?: string[];
+  };
 }
 
 const STEPS = ['Basics', 'Frontend', 'Backend', 'Additional', 'Review'] as const;
+const DRAFT_KEY = 'prompt_mastery_builder_draft_v2';
+
+function isFilled(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return value !== undefined && value !== null;
+}
+
+function shouldShowQuestion(question: Question, formData: FormData): boolean {
+  if (!question.showWhen) return true;
+  const parentValue = formData[question.showWhen.field as keyof FormData];
+  if (parentValue === undefined || parentValue === null) return false;
+  if (!question.showWhen.values || question.showWhen.values.length === 0) return true;
+  return question.showWhen.values.includes(parentValue as PrimitiveOptionValue);
+}
 
 export default function BuilderPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [formData, setFormData] = useState<FormData>({});
+  const [formData, setFormData] = useState<FormData>({ generationMode: 'balanced' });
   const [questions, setQuestions] = useState<Record<string, Question[]>>({});
+  const [requiredByStep, setRequiredByStep] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [resumeAvailable, setResumeAvailable] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(window.sessionStorage.getItem(DRAFT_KEY));
+  });
+  const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string>('');
 
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
         const response = await fetch(`${apiUrl}/api/questions`);
-        const data = await response.json();
-        setQuestions(data);
+        const payload = (await response.json()) as ApiEnvelope<QuestionsApiResponse>;
+
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(payload.error?.message || 'Failed to load questions');
+        }
+
+        setQuestions(payload.data.questions || {});
+        setRequiredByStep(payload.data.contract?.requiredByStep || {});
       } catch (error) {
         console.error('Failed to fetch questions:', error);
+        setSubmitError(error instanceof Error ? error.message : 'Failed to load questions');
       } finally {
         setLoading(false);
       }
@@ -59,23 +125,66 @@ export default function BuilderPage() {
     fetchQuestions();
   }, []);
 
-  // Auto-scroll to top when step changes
+  useEffect(() => {
+    if (loading) return;
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, formData }));
+  }, [formData, step, loading]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [step]);
 
+  const stepMap = useMemo(
+    () =>
+      ({
+        0: 'basics',
+        1: 'frontend',
+        2: 'backend',
+        3: 'additional',
+      }) as Record<number, string>,
+    []
+  );
+
   const currentQuestions = useMemo(() => {
-    const stepMap: Record<number, string> = {
-      0: 'basics',
-      1: 'frontend',
-      2: 'backend',
-      3: 'additional',
-      4: 'basics',
-    };
-    return questions[stepMap[step]] || [];
-  }, [questions, step]);
+    if (step === STEPS.length - 1) return [];
+    const list = questions[stepMap[step]] || [];
+    return list.filter((question) => shouldShowQuestion(question, formData));
+  }, [questions, step, stepMap, formData]);
+
+  const missingFieldsInCurrentStep = useMemo(() => {
+    return currentQuestions
+      .filter((question) => question.required)
+      .filter((question) => !isFilled(formData[question.id as keyof FormData]))
+      .map((question) => question.id);
+  }, [currentQuestions, formData]);
+
+  const allRequiredMissing = useMemo(() => {
+    const requiredList = new Set<string>();
+    Object.values(requiredByStep).forEach((list) => list.forEach((item) => requiredList.add(item)));
+
+    return Array.from(requiredList).filter((field) => !isFilled(formData[field as keyof FormData]));
+  }, [formData, requiredByStep]);
+
+  const handleResumeDraft = () => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed?.formData) setFormData(parsed.formData);
+      if (typeof parsed?.step === 'number') setStep(parsed.step);
+      setResumeAvailable(false);
+    } catch (error) {
+      console.error('Failed to restore draft:', error);
+    }
+  };
+
+  const handleDiscardDraft = () => {
+    sessionStorage.removeItem(DRAFT_KEY);
+    setResumeAvailable(false);
+  };
 
   const handleAnswer = (questionId: string, value: PrimitiveOptionValue) => {
+    setStepErrors((prev) => ({ ...prev, [questionId]: '' }));
     setFormData((prev) => ({
       ...prev,
       [questionId]: value,
@@ -92,69 +201,120 @@ export default function BuilderPage() {
     });
   };
 
+  const goNext = () => {
+    if (missingFieldsInCurrentStep.length > 0) {
+      const nextErrors: Record<string, string> = {};
+      missingFieldsInCurrentStep.forEach((id) => {
+        nextErrors[id] = 'This field is required.';
+      });
+      setStepErrors((prev) => ({ ...prev, ...nextErrors }));
+      return;
+    }
+
+    setStep((prev) => Math.min(STEPS.length - 1, prev + 1));
+  };
+
+  const fetchApi = async <T,>(url: string, init: RequestInit): Promise<ApiEnvelope<T>> => {
+    const response = await fetch(url, init);
+    const payload = (await response.json()) as ApiEnvelope<T>;
+    if (!response.ok || !payload.success) {
+      throw new Error(payload.error?.message || 'Request failed');
+    }
+    return payload;
+  };
+
   const handleSubmit = async () => {
+    setSubmitError('');
+
+    if (allRequiredMissing.length > 0) {
+      setSubmitError('Please complete all required fields before generating.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-      const createResponse = await fetch(`${apiUrl}/api/projects`, {
+      const createPayload = await fetchApi<{ id: string }>(`${apiUrl}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formData.projectName || 'New Project',
           projectType: formData.projectType,
           useAI: formData.useAI,
+          projectName: formData.projectName,
         }),
       });
 
-      if (createResponse.ok) {
-        const project = await createResponse.json();
-        const generateAndSaveResponse = await fetch(`${apiUrl}/api/generate/save`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: project.id,
-            ...formData,
-          }),
-        });
-
-        if (generateAndSaveResponse.ok) {
-          router.push(`/results/${project.id}`);
-          return;
-        }
-
-        const saveError = await generateAndSaveResponse.json().catch(() => ({}));
-        console.warn('Generate/save failed, falling back to preview mode:', saveError);
-      } else {
-        const createError = await createResponse.json().catch(() => ({}));
-        console.warn('Project create failed, falling back to preview mode:', createError);
+      const project = createPayload.data;
+      if (!project?.id) {
+        throw new Error('Project creation did not return a valid id.');
       }
 
-      const previewResponse = await fetch(`${apiUrl}/api/generate`, {
+      const savePayload = await fetchApi<{
+        status: string;
+        statusReason?: string;
+        prompt: string;
+        recommendations: unknown[];
+      }>(`${apiUrl}/api/generate/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          projectId: project.id,
+          ...formData,
+        }),
       });
 
-      if (!previewResponse.ok) {
-        const previewError = await previewResponse.json().catch(() => ({}));
-        throw new Error(previewError.error || 'Failed to generate prompt.');
+      const status = savePayload.data?.status;
+      if (status === 'preview_only') {
+        sessionStorage.setItem(
+          'prompt_mastery_preview',
+          JSON.stringify({
+            prompt: savePayload.data?.prompt || '',
+            recommendations: savePayload.data?.recommendations || [],
+            sourceData: formData,
+            createdAt: Date.now(),
+            status: 'preview_only',
+            statusReason: savePayload.data?.statusReason || 'database_unavailable',
+          })
+        );
+        router.push('/results/preview');
+      } else {
+        router.push(`/results/${project.id}`);
       }
 
-      const previewData = await previewResponse.json();
-      sessionStorage.setItem(
-        'prompt_mastery_preview',
-        JSON.stringify({
-          prompt: previewData.prompt || '',
-          recommendations: previewData.recommendations || [],
-          createdAt: Date.now(),
-        })
-      );
-
-      router.push('/results/preview');
+      sessionStorage.removeItem(DRAFT_KEY);
     } catch (error) {
-      console.error('Failed to generate prompt:', error);
-      alert(error instanceof Error ? error.message : 'Failed to generate prompt. Please try again.');
+      console.warn('Create/save flow failed, attempting preview generation.', error);
+
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const previewPayload = await fetchApi<{
+          prompt: string;
+          recommendations: unknown[];
+        }>(`${apiUrl}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        sessionStorage.setItem(
+          'prompt_mastery_preview',
+          JSON.stringify({
+            prompt: previewPayload.data?.prompt || '',
+            recommendations: previewPayload.data?.recommendations || [],
+            sourceData: formData,
+            createdAt: Date.now(),
+            status: 'preview_only',
+            statusReason: 'project_save_failed',
+          })
+        );
+
+        router.push('/results/preview');
+        sessionStorage.removeItem(DRAFT_KEY);
+      } catch (previewError) {
+        setSubmitError(previewError instanceof Error ? previewError.message : 'Failed to generate prompt');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -176,16 +336,39 @@ export default function BuilderPage() {
         <header className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
             <Link href="/" className="mb-3 inline-flex items-center gap-2 text-sm text-sky-300 transition hover:text-sky-200">
-              <span>←</span>
+              <span>&larr;</span>
               <span>Back to Home</span>
             </Link>
             <h1 className="text-3xl font-black text-white md:text-4xl">Prompt Builder</h1>
             <p className="mt-1 text-slate-300">Step {step + 1} of {STEPS.length}</p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/65 px-4 py-3 text-sm text-slate-300">
-            Complete all sections to generate the most accurate prompt.
+            Complete required fields for a high-signal prompt.
           </div>
         </header>
+
+        {resumeAvailable && (
+          <section className="mb-6 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <p className="font-semibold">Saved draft found.</p>
+            <p className="mt-1">You can resume where you left off or start fresh.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleResumeDraft}
+                className="rounded-lg bg-amber-300 px-3 py-1.5 font-semibold text-slate-900 transition hover:bg-amber-200"
+              >
+                Resume Draft
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="rounded-lg border border-amber-300/50 px-3 py-1.5 font-semibold text-amber-100 transition hover:border-amber-200"
+              >
+                Discard Draft
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="grid gap-3 sm:grid-cols-5">
@@ -194,14 +377,8 @@ export default function BuilderPage() {
               const isCurrent = index === step;
               return (
                 <div key={label} className="space-y-2">
-                  <div
-                    className={`h-2 rounded-full transition ${
-                      isCurrent ? 'bg-sky-400' : isDone ? 'bg-emerald-400' : 'bg-slate-800'
-                    }`}
-                  />
-                  <p className={`text-xs font-semibold ${isCurrent ? 'text-sky-200' : isDone ? 'text-emerald-200' : 'text-slate-400'}`}>
-                    {label}
-                  </p>
+                  <div className={`h-2 rounded-full transition ${isCurrent ? 'bg-sky-400' : isDone ? 'bg-emerald-400' : 'bg-slate-800'}`} />
+                  <p className={`text-xs font-semibold ${isCurrent ? 'text-sky-200' : isDone ? 'text-emerald-200' : 'text-slate-400'}`}>{label}</p>
                 </div>
               );
             })}
@@ -210,14 +387,17 @@ export default function BuilderPage() {
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-7">
           {step === STEPS.length - 1 ? (
-            <ReviewStep formData={formData} />
+            <ReviewStep formData={formData} missingFields={allRequiredMissing} />
           ) : (
             <>
               <h2 className="mb-6 text-2xl font-bold text-white">{STEPS[step]}</h2>
               <div className="space-y-6">
                 {currentQuestions.map((question) => (
                   <div key={question.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                    <label className="mb-3 block text-sm font-semibold text-slate-200">{question.question}</label>
+                    <label className="mb-3 block text-sm font-semibold text-slate-200">
+                      {question.question}
+                      {question.required ? <span className="ml-1 text-rose-300">*</span> : null}
+                    </label>
 
                     {question.type === 'mcq' && (
                       <div className="grid gap-2">
@@ -274,11 +454,43 @@ export default function BuilderPage() {
                         })}
                       </div>
                     )}
+
+                    {stepErrors[String(question.id)] ? (
+                      <p className="mt-2 text-xs text-rose-300">{stepErrors[String(question.id)]}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </>
           )}
+
+          <section className="mt-6 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+            <h3 className="text-sm font-semibold text-slate-200">Prompt Mode</h3>
+            <p className="mt-1 text-xs text-slate-400">Choose how detailed the generated implementation prompt should be.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {[
+                { value: 'quick', label: 'Quick', desc: 'Fast and concise' },
+                { value: 'balanced', label: 'Balanced', desc: 'Default depth' },
+                { value: 'strict-spec', label: 'Strict Spec', desc: 'Most detailed' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleAnswer('generationMode', option.value as PrimitiveOptionValue)}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    formData.generationMode === option.value
+                      ? 'border-violet-400 bg-violet-500/15 text-violet-100'
+                      : 'border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-500'
+                  }`}
+                >
+                  <p className="font-semibold">{option.label}</p>
+                  <p className="text-xs text-slate-400">{option.desc}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {submitError ? <p className="mt-4 text-sm text-rose-300">{submitError}</p> : null}
 
           <div className="mt-8 flex items-center justify-between gap-3">
             <button
@@ -293,7 +505,7 @@ export default function BuilderPage() {
             {step < STEPS.length - 1 ? (
               <button
                 type="button"
-                onClick={() => setStep((prev) => Math.min(STEPS.length - 1, prev + 1))}
+                onClick={goNext}
                 className="rounded-lg bg-sky-500 px-6 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
               >
                 Next
@@ -315,7 +527,7 @@ export default function BuilderPage() {
   );
 }
 
-function ReviewStep({ formData }: { formData: FormData }) {
+function ReviewStep({ formData, missingFields }: { formData: FormData; missingFields: string[] }) {
   const items = [
     ['Project Type', formData.projectType],
     ['AI Usage', formData.useAI === undefined ? undefined : formData.useAI ? 'Yes' : 'No'],
@@ -332,6 +544,7 @@ function ReviewStep({ formData }: { formData: FormData }) {
     ['Runtime', formData.runtime],
     ['Deployment', formData.deploymentPlatform],
     ['Additional Features', formData.additionalFeatures?.join(', ')],
+    ['Prompt Mode', formData.generationMode],
   ] as const;
 
   return (
@@ -347,6 +560,17 @@ function ReviewStep({ formData }: { formData: FormData }) {
             </div>
           ))}
       </div>
+
+      {missingFields.length > 0 ? (
+        <div className="mt-6 rounded-xl border border-rose-400/40 bg-rose-500/10 p-4">
+          <p className="text-sm font-semibold text-rose-200">Missing required fields</p>
+          <p className="mt-1 text-xs text-rose-200/90">{missingFields.join(', ')}</p>
+        </div>
+      ) : (
+        <p className="mt-6 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+          All required fields are complete.
+        </p>
+      )}
     </div>
   );
 }

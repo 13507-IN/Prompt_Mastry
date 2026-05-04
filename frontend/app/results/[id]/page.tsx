@@ -4,16 +4,34 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
+interface ApiEnvelope<T> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
 interface Recommendation {
   category: string;
   title: string;
   description: string;
   priority: string;
   reason: string;
+  tags?: string[];
 }
 
 interface RecommendationWithKey extends Recommendation {
   key: string;
+}
+
+interface PreviewPayload {
+  prompt: string;
+  recommendations: Recommendation[];
+  sourceData?: Record<string, unknown>;
+  status?: string;
+  statusReason?: string;
 }
 
 export default function ResultsPage() {
@@ -25,42 +43,60 @@ export default function ResultsPage() {
   const [basePrompt, setBasePrompt] = useState('');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [selectedRecommendations, setSelectedRecommendations] = useState<Record<string, boolean>>({});
+  const [sourceData, setSourceData] = useState<Record<string, unknown> | null>(null);
+  const [activeTag, setActiveTag] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [promptEnhanced, setPromptEnhanced] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  const fetchEnvelope = async <T,>(url: string): Promise<T> => {
+    const response = await fetch(url);
+    const payload = (await response.json()) as ApiEnvelope<T>;
+    if (!response.ok || !payload.success || !payload.data) {
+      throw new Error(payload.error?.message || 'Request failed');
+    }
+    return payload.data;
+  };
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (isPreviewMode) {
-        try {
-          const cachedPreview = sessionStorage.getItem('prompt_mastery_preview');
-          if (cachedPreview) {
-            const parsed = JSON.parse(cachedPreview);
-            const loadedPrompt = parsed.prompt || '';
-            const loadedRecommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-            setPrompt(loadedPrompt);
-            setBasePrompt(loadedPrompt);
-            setRecommendations(loadedRecommendations);
-          }
-        } catch (error) {
-          console.error('Failed to load preview result:', error);
-        } finally {
-          setLoading(false);
-        }
-        return;
-      }
-
       try {
+        if (isPreviewMode) {
+          const cachedPreview = sessionStorage.getItem('prompt_mastery_preview');
+          if (!cachedPreview) {
+            setStatusMessage('Preview data is not available. Please generate again.');
+            return;
+          }
+
+          const parsed = JSON.parse(cachedPreview) as PreviewPayload;
+          const loadedPrompt = parsed.prompt || '';
+          const loadedRecommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
+          setPrompt(loadedPrompt);
+          setBasePrompt(loadedPrompt);
+          setRecommendations(loadedRecommendations);
+          setSourceData(parsed.sourceData || null);
+          if (parsed.status === 'preview_only') {
+            setStatusMessage(`Preview mode enabled (${parsed.statusReason || 'generation only'}).`);
+          }
+          return;
+        }
+
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-        const response = await fetch(`${apiUrl}/api/generate/${projectId}`);
-        const data = await response.json();
-        const loadedPrompt = data.prompt || '';
-        const loadedRecommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
-        setPrompt(loadedPrompt);
-        setBasePrompt(loadedPrompt);
-        setRecommendations(loadedRecommendations);
+        const generated = await fetchEnvelope<{ prompt: string; recommendations: Recommendation[] }>(`${apiUrl}/api/generate/${projectId}`);
+        setPrompt(generated.prompt || '');
+        setBasePrompt(generated.prompt || '');
+        setRecommendations(Array.isArray(generated.recommendations) ? generated.recommendations : []);
+
+        try {
+          const project = await fetchEnvelope<Record<string, unknown>>(`${apiUrl}/api/projects/${projectId}`);
+          setSourceData(project);
+        } catch {
+          setSourceData(null);
+        }
       } catch (error) {
-        console.error('Failed to fetch results:', error);
+        setStatusMessage(error instanceof Error ? error.message : 'Failed to fetch results');
       } finally {
         setLoading(false);
       }
@@ -80,14 +116,25 @@ export default function ResultsPage() {
     [recommendations]
   );
 
+  const availableTags = useMemo(() => {
+    const tags = new Set<string>();
+    flattenedRecommendations.forEach((rec) => (rec.tags || []).forEach((tag) => tags.add(tag)));
+    return ['all', ...Array.from(tags)];
+  }, [flattenedRecommendations]);
+
+  const filteredRecommendations = useMemo(() => {
+    if (activeTag === 'all') return flattenedRecommendations;
+    return flattenedRecommendations.filter((rec) => (rec.tags || []).includes(activeTag));
+  }, [flattenedRecommendations, activeTag]);
+
   const groupedRecommendations = useMemo(() => {
     const grouped: Record<string, RecommendationWithKey[]> = {};
-    for (const rec of flattenedRecommendations) {
+    for (const rec of filteredRecommendations) {
       if (!grouped[rec.category]) grouped[rec.category] = [];
       grouped[rec.category].push(rec);
     }
     return grouped;
-  }, [flattenedRecommendations]);
+  }, [filteredRecommendations]);
 
   const selectedRecommendationList = useMemo(
     () => flattenedRecommendations.filter((rec) => selectedRecommendations[rec.key]),
@@ -124,7 +171,7 @@ export default function ResultsPage() {
       'Please revise your output to include these recommendations:',
       ...recommendationBlockLines,
       '',
-      'When applying these, keep the existing project requirements and improve the architecture, quality, and delivery plan.',
+      'When applying these, keep the existing project requirements and improve architecture, quality, and delivery clarity.',
     ].join('\n');
 
     setPrompt(`${basePrompt}\n\n${enhancementBlock}`);
@@ -134,6 +181,43 @@ export default function ResultsPage() {
   const resetPrompt = () => {
     setPrompt(basePrompt);
     setPromptEnhanced(false);
+  };
+
+  const regeneratePrompt = async () => {
+    if (!sourceData) {
+      setStatusMessage('Source input data is not available for regeneration.');
+      return;
+    }
+
+    try {
+      setRegenerating(true);
+      setStatusMessage('');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${apiUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sourceData),
+      });
+      const payload = (await response.json()) as ApiEnvelope<{
+        prompt: string;
+        recommendations: Recommendation[];
+      }>;
+
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error?.message || 'Regeneration failed');
+      }
+
+      setPrompt(payload.data.prompt || '');
+      setBasePrompt(payload.data.prompt || '');
+      setRecommendations(payload.data.recommendations || []);
+      setSelectedRecommendations({});
+      setPromptEnhanced(false);
+      setStatusMessage('Prompt regenerated from the same inputs.');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Regeneration failed');
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   if (loading) {
@@ -151,16 +235,14 @@ export default function ResultsPage() {
       <div className="relative mx-auto w-full max-w-5xl">
         <header className="mb-8">
           <Link href="/" className="mb-3 inline-flex items-center gap-2 text-sm text-sky-300 transition hover:text-sky-200">
-            <span>←</span>
+            <span>&larr;</span>
             <span>Back to Home</span>
           </Link>
           <h1 className="text-3xl font-black text-white md:text-4xl">Your Prompt Is Ready</h1>
           <p className="mt-2 text-slate-300">Use this in any AI tool. You can also merge selected recommendations into the prompt.</p>
-          {isPreviewMode && (
-            <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-              Preview mode: generation worked, but database storage was not available.
-            </p>
-          )}
+          {statusMessage ? (
+            <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{statusMessage}</p>
+          ) : null}
         </header>
 
         <section className="mb-7 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-7">
@@ -183,6 +265,14 @@ export default function ResultsPage() {
                 className="rounded-lg bg-violet-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Update with Selected Recommendations
+              </button>
+              <button
+                type="button"
+                onClick={regeneratePrompt}
+                disabled={regenerating || !sourceData}
+                className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {regenerating ? 'Regenerating...' : 'Regenerate Same Inputs'}
               </button>
               <button
                 type="button"
@@ -216,6 +306,23 @@ export default function ResultsPage() {
           <h3 className="text-2xl font-bold text-white">Recommendations</h3>
           <p className="mt-1 text-sm text-slate-300">Select recommendations to include directly in the prompt update.</p>
 
+          <div className="mt-4 flex flex-wrap gap-2">
+            {availableTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setActiveTag(tag)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ${
+                  activeTag === tag
+                    ? 'border-sky-400 bg-sky-500/20 text-sky-200'
+                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+
           {Object.keys(groupedRecommendations).length === 0 ? (
             <p className="mt-6 rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm text-slate-300">
               No recommendations available for this result.
@@ -242,6 +349,15 @@ export default function ResultsPage() {
                         </div>
                         <p className="text-sm text-slate-300">{rec.description}</p>
                         <p className="mt-2 text-xs text-slate-400">Why it matters: {rec.reason}</p>
+                        {rec.tags && rec.tags.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {rec.tags.map((tag) => (
+                              <span key={tag} className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>
