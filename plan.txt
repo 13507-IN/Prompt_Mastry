@@ -1,0 +1,66 @@
+## Prompt Mastery Upgrade Plan (4-6 Weeks, Ship-Ready for Solo Devs)
+
+### Summary
+Current baseline shows a solid core flow (landing → builder → results), clean frontend lint, and clear backend routes, but major gaps in validation, testing, API consistency, and production hardening.  
+This plan focuses on improving reliability and UX polish without a risky rewrite (incremental JavaScript backend cleanup, no full TS migration in this cycle).
+
+### Implementation Changes
+1. **Week 1: Data Contract + Validation Foundation**
+- Define a single questionnaire/prompt contract used by both frontend and backend (field names, allowed values, required/optional rules).
+- Add backend request validation for `POST /api/projects` and `POST /api/generate/save` with clear 400 responses for invalid input.
+- Add normalization for `additionalFeatures`, booleans, and numeric fields before persistence.
+- Standardize API error envelope to one shape: `{ success, error: { code, message, details } }`.
+- Add defensive parsing for stored JSON fields (`recommendations`, `additionalFeatures`, `uiPreferences`) to avoid runtime parse failures.
+
+2. **Week 2: Builder UX and Completion Quality**
+- Add required-field gating on each step so users cannot proceed with empty critical inputs.
+- Show inline validation states instead of `alert()` failures.
+- Render conditional custom inputs only when relevant option is selected (for `_custom` fields).
+- Add autosave draft in browser storage with “resume previous draft” behavior.
+- Improve review step to clearly highlight missing required answers before generate.
+
+3. **Week 3: Result Quality + Prompt Intelligence**
+- Refactor prompt generation to reduce generic boilerplate and prioritize user-selected signals.
+- Add “prompt mode” toggle in generation logic: `quick`, `balanced`, `strict-spec`.
+- Remove duplicate/low-value recommendations and cap per category with ranking rules.
+- Add recommendation tags (`security`, `performance`, `testing`, `devex`) for better filtering in results UI.
+- Add “regenerate with same inputs” support from results page without restarting full flow.
+
+4. **Week 4: Production Hardening (Backend)**
+- Add `helmet`, request size limits, and rate limiting on generation endpoints.
+- Expand CORS configuration to explicit environment-driven allowlist.
+- Add structured logging with request ID and latency for each API call.
+- Split health endpoints into liveness/readiness and include DB connectivity in readiness.
+- Add safer fallback behavior when DB unavailable (keep preview mode, return clear status reason).
+
+5. **Week 5-6: Testing + CI/CD + Docs Alignment**
+- Add backend tests for routes and generation logic (happy path + validation failures + DB failure fallback).
+- Add frontend E2E tests for critical flow: build answers → generate → copy prompt.
+- Add CI workflow for lint + backend tests + frontend tests on PR.
+- Update root README to match actual stack and runtime behavior (PostgreSQL, preview fallback, endpoints).
+- Add `.env.example` files for frontend/backend with required variables and sample values.
+
+### Public API / Interface Updates
+- Keep existing endpoint paths, but standardize response contract across all APIs:
+- Success: `{ success: true, data: ... }`
+- Failure: `{ success: false, error: { code, message, details? } }`
+- Add pagination support to `GET /api/projects` via `?page=&limit=` and return `{ items, page, limit, total }`.
+- Add optional generation mode input on `POST /api/generate` and `POST /api/generate/save`: `generationMode: "quick" | "balanced" | "strict-spec"`.
+- Add explicit `status` field in preview fallback responses so frontend can render informative notices consistently.
+
+### Test Cases and Scenarios
+- Invalid payloads rejected with deterministic 400 errors for each major endpoint.
+- Full create + generate + save flow succeeds with normalized persisted data.
+- DB unavailable path falls back to preview mode and still returns usable prompt payload.
+- Builder blocks forward navigation when required fields missing.
+- Draft save/resume restores user progress accurately after refresh.
+- Recommendation selection modifies prompt text deterministically and reset restores baseline prompt.
+- CI fails on contract drift between frontend form payload and backend validation schema.
+
+### Assumptions and Defaults
+- Keep current architecture: Next.js frontend + Express backend + Prisma/PostgreSQL.
+- No authentication/authorization rollout in this cycle (solo-dev primary audience).
+- No full backend TypeScript migration in this cycle; focus on incremental JS hardening.
+- Deploy target remains current Vercel split-service setup with environment-based config.
+- Success target for this cycle: stable prompt generation flow, clear error handling, and automated test baseline suitable for safe iteration.
+
