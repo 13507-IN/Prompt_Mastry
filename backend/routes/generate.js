@@ -2,14 +2,28 @@ const express = require('express');
 const { prisma } = require('../prismaClient');
 const { generatePrompt } = require('../utils/promptGenerator');
 const { generateRecommendations } = require('../utils/recommendations');
+const { validateGeneratePayload } = require('../contract/projectContract');
+const { safeJsonStringify } = require('../utils/safeJson');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { createMemoryRateLimiter } = require('../middleware/rateLimit');
+
 const router = express.Router();
+
+const generationLimiter = createMemoryRateLimiter({
+  windowMs: 60 * 1000,
+  limit: 30,
+  keyPrefix: 'generate',
+});
+
+router.use(generationLimiter);
 
 function pickPersistedProjectData(projectData) {
   const uiPreferences = {
     framework: projectData.framework,
     uiLibrary: projectData.uiLibrary,
     runtime: projectData.runtime,
-    deploymentPlatform: projectData.deploymentPlatform
+    deploymentPlatform: projectData.deploymentPlatform,
+    generationMode: projectData.generationMode,
   };
 
   const persisted = {
@@ -23,10 +37,8 @@ function pickPersistedProjectData(projectData) {
     ormChoice: projectData.ormChoice ?? undefined,
     authRequired: typeof projectData.authRequired === 'boolean' ? projectData.authRequired : undefined,
     apiType: projectData.apiType ?? undefined,
-    additionalFeatures: Array.isArray(projectData.additionalFeatures)
-      ? JSON.stringify(projectData.additionalFeatures)
-      : undefined,
-    uiPreferences: JSON.stringify(uiPreferences)
+    additionalFeatures: safeJsonStringify(projectData.additionalFeatures || []),
+    uiPreferences: safeJsonStringify(uiPreferences, '{}'),
   };
 
   return Object.fromEntries(
@@ -34,93 +46,134 @@ function pickPersistedProjectData(projectData) {
   );
 }
 
-// POST - Generate prompt and recommendations
 router.post('/', async (req, res) => {
+  const validation = validateGeneratePayload(req.body || {});
+  if (!validation.isValid) {
+    return sendError(res, {
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid generation payload',
+      details: validation.errors,
+    });
+  }
+
   try {
-    const projectData = req.body;
+    const generatedPrompt = generatePrompt(validation.data);
+    const recommendations = generateRecommendations(validation.data);
 
-    // Generate the AI prompt
-    const generatedPrompt = generatePrompt(projectData);
-
-    // Generate recommendations
-    const recommendations = generateRecommendations(projectData);
-
-    res.json({
-      success: true,
+    return sendSuccess(res, {
+      status: 'generated',
       prompt: generatedPrompt,
-      recommendations: recommendations
+      recommendations,
+      generationMode: validation.data.generationMode,
     });
   } catch (error) {
     console.error('POST /api/generate failed:', error);
-    res.status(500).json({
-      error: error?.message || 'Generation error',
-      code: error?.code || null,
-      meta: error?.meta || null
+    return sendError(res, {
+      status: 500,
+      code: 'PROMPT_GENERATION_FAILED',
+      message: 'Failed to generate prompt',
+      details: { reason: error?.message || 'Unknown generation error' },
     });
   }
 });
 
-// POST - Generate and save to database
 router.post('/save', async (req, res) => {
+  const validation = validateGeneratePayload(req.body || {}, { requireProjectId: true });
+  if (!validation.isValid) {
+    return sendError(res, {
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid generation payload',
+      details: validation.errors,
+    });
+  }
+
+  const { projectId, ...projectData } = validation.data;
+
   try {
-    const { projectId, ...projectData } = req.body;
-
-    if (!projectId) {
-      return res.status(400).json({ error: 'projectId is required' });
-    }
-
-    // Generate prompt and recommendations
     const generatedPrompt = generatePrompt(projectData);
     const recommendations = generateRecommendations(projectData);
     const persistedProjectData = pickPersistedProjectData(projectData);
 
-    // Save to database
-    const updatedProject = await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...persistedProjectData,
-        generatedPrompt,
-        recommendations: JSON.stringify(recommendations)
-      }
-    });
+    try {
+      const updatedProject = await prisma.project.update({
+        where: { id: projectId },
+        data: {
+          ...persistedProjectData,
+          generatedPrompt,
+          recommendations: safeJsonStringify(recommendations, '[]'),
+        },
+      });
 
-    res.json({
-      success: true,
-      project: updatedProject,
-      recommendations
-    });
+      return sendSuccess(res, {
+        status: 'saved',
+        project: updatedProject,
+        prompt: generatedPrompt,
+        recommendations,
+        generationMode: projectData.generationMode,
+      });
+    } catch (dbError) {
+      if (dbError?.code === 'P2025') {
+        return sendError(res, {
+          status: 404,
+          code: 'PROJECT_NOT_FOUND',
+          message: 'Project not found',
+        });
+      }
+
+      return sendSuccess(res, {
+        status: 'preview_only',
+        statusReason: 'database_unavailable',
+        prompt: generatedPrompt,
+        recommendations,
+        generationMode: projectData.generationMode,
+      });
+    }
   } catch (error) {
     console.error('POST /api/generate/save failed:', error);
-    res.status(500).json({
-      error: error?.message || 'Database save error',
-      code: error?.code || null,
-      meta: error?.meta || null
+    return sendError(res, {
+      status: 500,
+      code: 'PROMPT_SAVE_FAILED',
+      message: 'Failed to generate and save prompt',
+      details: { reason: error?.message || 'Unknown error' },
     });
   }
 });
 
-// GET - Retrieve generated prompt for a project
 router.get('/:projectId', async (req, res) => {
   try {
     const project = await prisma.project.findUnique({
-      where: { id: req.params.projectId }
+      where: { id: req.params.projectId },
     });
 
     if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
+      return sendError(res, {
+        status: 404,
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+      });
     }
 
-    res.json({
-      success: true,
-      prompt: project.generatedPrompt,
-      recommendations: project.recommendations ? JSON.parse(project.recommendations) : []
+    let recommendations = [];
+    try {
+      recommendations = project.recommendations ? JSON.parse(project.recommendations) : [];
+    } catch (_error) {
+      recommendations = [];
+    }
+
+    return sendSuccess(res, {
+      status: 'saved',
+      prompt: project.generatedPrompt || '',
+      recommendations,
     });
   } catch (error) {
     console.error('GET /api/generate/:projectId failed:', error);
-    res.status(500).json({
-      error: error?.message || 'Fetch error',
-      code: error?.code || null,
-      meta: error?.meta || null
+    return sendError(res, {
+      status: 500,
+      code: 'PROMPT_FETCH_FAILED',
+      message: 'Failed to fetch generated prompt',
+      details: { reason: error?.message || 'Unknown fetch error' },
     });
   }
 });
