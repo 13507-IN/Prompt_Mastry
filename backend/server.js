@@ -104,6 +104,7 @@ app.get('/_/backend/health', (_req, res) => {
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/questions', require('./routes/questions'));
 app.use('/api/generate', require('./routes/generate'));
+app.use('/api/enhance', require('./routes/enhance'));
 
 app.use((req, res) => {
   return sendError(res, {
