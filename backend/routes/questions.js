@@ -5,9 +5,15 @@ const { sendSuccess } = require('../utils/apiResponse');
 const router = express.Router();
 
 router.get('/', (_req, res) => {
+  const contract = getContractMetadata();
+
   sendSuccess(res, {
     questions: QUESTIONS,
-    contract: getContractMetadata(),
+    contract,
+    _schema: {
+      version: contract.version,
+      lastUpdated: contract.lastUpdated,
+    },
   });
 });
 

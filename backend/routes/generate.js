@@ -3,8 +3,9 @@ const { prisma } = require('../prismaClient');
 const { generatePrompt } = require('../utils/promptGenerator');
 const { generateRecommendations } = require('../utils/recommendations');
 const { validateGeneratePayload } = require('../contract/projectContract');
-const { safeJsonStringify } = require('../utils/safeJson');
+const { safeJsonStringify, safeJsonParse } = require('../utils/safeJson');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { serializeProjectRecord } = require('../utils/projectSerializer');
 const { createMemoryRateLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
@@ -17,27 +18,53 @@ const generationLimiter = createMemoryRateLimiter({
 
 router.use(generationLimiter);
 
+function normalizeToBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+function normalizeToNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function deduplicateArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return [...new Set(arr)];
+}
+
 function pickPersistedProjectData(projectData) {
+  const additionalFeatures = deduplicateArray(projectData.additionalFeatures);
+  const normalizedPageCount = normalizeToNumber(projectData.pageCount);
+  const normalizedAuthRequired = normalizeToBoolean(projectData.authRequired);
+  const normalizedUseAI = normalizeToBoolean(projectData.useAI);
+
   const uiPreferences = {
-    framework: projectData.framework,
-    uiLibrary: projectData.uiLibrary,
-    runtime: projectData.runtime,
-    deploymentPlatform: projectData.deploymentPlatform,
-    generationMode: projectData.generationMode,
+    framework: projectData.framework || null,
+    uiLibrary: projectData.uiLibrary || null,
+    runtime: projectData.runtime || null,
+    deploymentPlatform: projectData.deploymentPlatform || null,
+    generationMode: projectData.generationMode || 'balanced',
   };
 
   const persisted = {
     projectType: projectData.projectType ?? undefined,
-    useAI: typeof projectData.useAI === 'boolean' ? projectData.useAI : undefined,
+    useAI: normalizedUseAI !== undefined ? normalizedUseAI : undefined,
     projectName: projectData.projectName ?? undefined,
     colorPalette: projectData.colorPalette ?? undefined,
     navbarPosition: projectData.navbarPosition ?? undefined,
-    pageCount: typeof projectData.pageCount === 'number' ? projectData.pageCount : undefined,
+    pageCount: normalizedPageCount !== undefined ? normalizedPageCount : undefined,
     dbProvider: projectData.dbProvider ?? undefined,
     ormChoice: projectData.ormChoice ?? undefined,
-    authRequired: typeof projectData.authRequired === 'boolean' ? projectData.authRequired : undefined,
+    authRequired: normalizedAuthRequired !== undefined ? normalizedAuthRequired : undefined,
     apiType: projectData.apiType ?? undefined,
-    additionalFeatures: safeJsonStringify(projectData.additionalFeatures || []),
+    additionalFeatures: safeJsonStringify(additionalFeatures, '[]'),
     uiPreferences: safeJsonStringify(uiPreferences, '{}'),
   };
 
@@ -108,7 +135,7 @@ router.post('/save', async (req, res) => {
 
       return sendSuccess(res, {
         status: 'saved',
-        project: updatedProject,
+        project: serializeProjectRecord(updatedProject),
         prompt: generatedPrompt,
         recommendations,
         generationMode: projectData.generationMode,
@@ -155,12 +182,7 @@ router.get('/:projectId', async (req, res) => {
       });
     }
 
-    let recommendations = [];
-    try {
-      recommendations = project.recommendations ? JSON.parse(project.recommendations) : [];
-    } catch (_error) {
-      recommendations = [];
-    }
+    const recommendations = safeJsonParse(project.recommendations, []);
 
     return sendSuccess(res, {
       status: 'saved',
