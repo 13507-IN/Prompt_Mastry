@@ -1,3 +1,6 @@
+const CONTRACT_VERSION = '1.1.0';
+const CONTRACT_LAST_UPDATED = '2026-05-13';
+
 const PROJECT_TYPES = ['web', 'mobile', 'desktop', 'api', 'hybrid'];
 const COLOR_PALETTES = ['dark', 'light', 'vibrant', 'minimal', 'custom'];
 const NAVBAR_POSITIONS = ['top', 'left', 'right', 'bottom'];
@@ -475,6 +478,18 @@ function validateField(field, value) {
   return null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateProjectId(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return 'projectId is required';
+  }
+  if (!UUID_RE.test(value.trim())) {
+    return 'projectId must be a valid UUID';
+  }
+  return null;
+}
+
 function validateProjectInput(normalizedInput, requiredFields = []) {
   const errors = [];
 
@@ -523,8 +538,11 @@ function validateGeneratePayload(payload, { requireProjectId = false } = {}) {
   const requiredFields = buildGenerateRequiredFields(normalized.projectType);
   const errors = validateProjectInput(normalized, requiredFields);
 
-  if (requireProjectId && !normalizeString(payload.projectId)) {
-    errors.push({ field: 'projectId', message: 'projectId is required' });
+  if (requireProjectId) {
+    const pidIssue = validateProjectId(payload.projectId);
+    if (pidIssue) {
+      errors.push({ field: 'projectId', message: pidIssue });
+    }
   }
 
   return {
@@ -538,30 +556,46 @@ function validateGeneratePayload(payload, { requireProjectId = false } = {}) {
 }
 
 function getContractMetadata() {
+  const allowedValues = {
+    projectType: PROJECT_TYPES,
+    colorPalette: COLOR_PALETTES,
+    navbarPosition: NAVBAR_POSITIONS,
+    framework: FRAMEWORKS,
+    uiLibrary: UI_LIBRARIES,
+    dbProvider: DB_PROVIDERS,
+    ormChoice: ORM_CHOICES,
+    apiType: API_TYPES,
+    runtime: RUNTIMES,
+    deploymentPlatform: DEPLOYMENT_PLATFORMS,
+    additionalFeatures: ADDITIONAL_FEATURES,
+    generationMode: GENERATION_MODES,
+  };
+
+  const fieldRules = {};
+  Object.entries(FIELD_RULES).forEach(([key, rule]) => {
+    if (rule.type === 'enum' || rule.type === 'array') {
+      fieldRules[key] = { type: rule.type, allowed: allowedValues[key] || rule.allowed };
+    } else {
+      fieldRules[key] = { ...rule };
+    }
+  });
+
   return {
-    version: '1.0.0',
+    version: CONTRACT_VERSION,
+    lastUpdated: CONTRACT_LAST_UPDATED,
     requiredByStep: REQUIRED_BY_STEP,
     generationModes: GENERATION_MODES,
-    allowedValues: {
-      projectType: PROJECT_TYPES,
-      colorPalette: COLOR_PALETTES,
-      navbarPosition: NAVBAR_POSITIONS,
-      framework: FRAMEWORKS,
-      uiLibrary: UI_LIBRARIES,
-      dbProvider: DB_PROVIDERS,
-      ormChoice: ORM_CHOICES,
-      apiType: API_TYPES,
-      runtime: RUNTIMES,
-      deploymentPlatform: DEPLOYMENT_PLATFORMS,
-      additionalFeatures: ADDITIONAL_FEATURES,
-    },
+    allowedValues,
+    fieldRules,
   };
 }
 
 module.exports = {
+  CONTRACT_VERSION,
   QUESTIONS,
   REQUIRED_BY_STEP,
   GENERATION_MODES,
+  FIELD_RULES,
   normalizeProjectInput,
   validateCreateProjectPayload,
   validateGeneratePayload,
