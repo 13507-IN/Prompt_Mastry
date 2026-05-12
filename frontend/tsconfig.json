@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@contract/*": ["../backend/contract/*"]
     }
   },
   "include": [

@@ -3,15 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-
-interface ApiEnvelope<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code?: string;
-    message?: string;
-  };
-}
+import type { ApiEnvelope } from '@contract/contractTypes';
 
 interface Recommendation {
   category: string;

@@ -3,71 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
-type PrimitiveOptionValue = string | number | boolean;
-
-interface FormData {
-  projectType?: string;
-  useAI?: boolean;
-  projectName?: string;
-  projectType_custom?: string;
-  colorPalette?: string;
-  colorPalette_custom?: string;
-  navbarPosition?: string;
-  navbarPosition_custom?: string;
-  pageCount?: number;
-  pageCount_custom?: string;
-  framework?: string;
-  framework_custom?: string;
-  uiLibrary?: string;
-  uiLibrary_custom?: string;
-  dbProvider?: string;
-  dbProvider_custom?: string;
-  ormChoice?: string;
-  ormChoice_custom?: string;
-  authRequired?: boolean;
-  authRequired_custom?: string;
-  apiType?: string;
-  apiType_custom?: string;
-  runtime?: string;
-  runtime_custom?: string;
-  deploymentPlatform?: string;
-  deploymentPlatform_custom?: string;
-  additionalFeatures?: string[];
-  additionalFeatures_custom?: string;
-  generationMode?: 'quick' | 'balanced' | 'strict-spec';
-}
-
-interface ApiEnvelope<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code?: string;
-    message?: string;
-    details?: Array<{ field?: string; message?: string }>;
-  };
-}
-
-interface Question {
-  id: keyof FormData | string;
-  question: string;
-  type: 'mcq' | 'text' | 'multi-select' | string;
-  required?: boolean;
-  options?: Array<{ value: PrimitiveOptionValue; label: string }>;
-  placeholder?: string;
-  showWhen?: {
-    field: keyof FormData | string;
-    values?: PrimitiveOptionValue[];
-  };
-}
-
-interface QuestionsApiResponse {
-  questions: Record<string, Question[]>;
-  contract?: {
-    requiredByStep?: Record<string, string[]>;
-    generationModes?: string[];
-  };
-}
+import type {
+  FormData,
+  ApiEnvelope,
+  Question,
+  QuestionsApiResponse,
+  RequiredByStep,
+  PrimitiveOptionValue,
+} from '@contract/contractTypes';
 
 const STEPS = ['Basics', 'Frontend', 'Backend', 'Additional', 'Review'] as const;
 const DRAFT_KEY = 'prompt_mastery_builder_draft_v2';
@@ -91,7 +34,7 @@ export default function BuilderPage() {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<FormData>({ generationMode: 'balanced' });
   const [questions, setQuestions] = useState<Record<string, Question[]>>({});
-  const [requiredByStep, setRequiredByStep] = useState<Record<string, string[]>>({});
+  const [requiredByStep, setRequiredByStep] = useState<RequiredByStep>({ basics: [], frontend: [], backend: [], additional: [] });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [resumeAvailable, setResumeAvailable] = useState(() => {
@@ -160,7 +103,7 @@ export default function BuilderPage() {
 
   const allRequiredMissing = useMemo(() => {
     const requiredList = new Set<string>();
-    Object.values(requiredByStep).forEach((list) => list.forEach((item) => requiredList.add(item)));
+    Object.values(requiredByStep).forEach((list: string[]) => list.forEach((item: string) => requiredList.add(item)));
 
     return Array.from(requiredList).filter((field) => !isFilled(formData[field as keyof FormData]));
   }, [formData, requiredByStep]);
