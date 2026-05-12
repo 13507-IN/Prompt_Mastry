@@ -25,7 +25,18 @@ function sendSuccess(res, data, status = 200, meta) {
   return res.status(status).json(successEnvelope(data, meta));
 }
 
-function sendError(res, { status = 500, code = 'INTERNAL_ERROR', message = 'Internal server error', details } = {}) {
+function sendError(res, opts = {}) {
+  if (typeof opts === 'string') {
+    console.error(
+      '[DEPRECATED] sendError called with positional args (code, message) instead of { code, message, status, details }.',
+      new Error().stack
+    );
+    const code = opts;
+    const message = arguments[2] || 'Unknown error';
+    return res.status(500).json(errorEnvelope(code, message, undefined));
+  }
+
+  const { status = 500, code = 'INTERNAL_ERROR', message = 'Internal server error', details } = opts;
   return res.status(status).json(errorEnvelope(code, message, details));
 }
 
