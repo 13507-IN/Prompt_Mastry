@@ -18,7 +18,18 @@ function safeJsonStringify(value, fallback = '[]') {
   }
 }
 
+function tryParseJsonFields(obj, fields, fallbacks) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const result = { ...obj };
+  (fields || []).forEach((field) => {
+    const fallback = fallbacks && fallbacks[field] !== undefined ? fallbacks[field] : null;
+    result[field] = safeJsonParse(result[field], fallback);
+  });
+  return result;
+}
+
 module.exports = {
   safeJsonParse,
   safeJsonStringify,
+  tryParseJsonFields,
 };

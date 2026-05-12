@@ -1,14 +1,16 @@
-const { safeJsonParse } = require('./safeJson');
+const { tryParseJsonFields } = require('./safeJson');
+
+const JSON_FIELDS = ['additionalFeatures', 'recommendations', 'uiPreferences'];
+const JSON_FALLBACKS = {
+  additionalFeatures: [],
+  recommendations: [],
+  uiPreferences: {},
+};
 
 function serializeProjectRecord(project) {
   if (!project) return project;
 
-  return {
-    ...project,
-    additionalFeatures: safeJsonParse(project.additionalFeatures, []),
-    recommendations: safeJsonParse(project.recommendations, []),
-    uiPreferences: safeJsonParse(project.uiPreferences, {}),
-  };
+  return tryParseJsonFields(project, JSON_FIELDS, JSON_FALLBACKS);
 }
 
 function serializeProjectRecords(projects) {
