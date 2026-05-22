@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "./context/AuthContext";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Prompt Mastery - Create Perfect AI Prompts",
@@ -11,14 +13,28 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const authUrl = process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'http://localhost:4000';
+
   return (
     <html
       lang="en"
       suppressHydrationWarning
       className="h-full antialiased"
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col">
-        {children}
+      <head>
+        <link
+          rel="stylesheet"
+          href={`${authUrl}/sdk/rishiraj-auth-modal.css`}
+        />
+      </head>
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-950">
+        <Script
+          src={`${authUrl}/sdk/rishiraj-auth.js`}
+          strategy="beforeInteractive"
+        />
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
