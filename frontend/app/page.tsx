@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useAuth } from './context/AuthContext';
 
 const FEATURES = [
   {
@@ -28,6 +29,8 @@ const STEPS = [
 ];
 
 export default function Home() {
+  const { user, isAuthenticated, login, logout, loading } = useAuth();
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(56,189,248,0.16),transparent_38%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.12),transparent_35%),radial-gradient(circle_at_40%_85%,rgba(16,185,129,0.08),transparent_42%)]" />
@@ -39,12 +42,39 @@ export default function Home() {
             <span>✨</span>
             <span>Prompt Mastery</span>
           </div>
-          <Link
-            href="/builder"
-            className="rounded-full border border-slate-700 bg-slate-900/70 px-5 py-2 text-sm font-semibold text-slate-100 transition hover:border-sky-400/60 hover:text-sky-200"
-          >
-            Launch Builder
-          </Link>
+          <div className="flex items-center gap-4">
+            {!loading && (
+              <>
+                {isAuthenticated ? (
+                  <div className="flex items-center gap-3">
+                    <div className="hidden sm:flex flex-col text-right">
+                      <span className="text-xs text-slate-400">Signed in as</span>
+                      <span className="text-sm font-medium text-slate-200">{user?.email}</span>
+                    </div>
+                    <button
+                      onClick={logout}
+                      className="rounded-full border border-slate-800 bg-slate-900/80 px-4 py-1.5 text-sm font-semibold text-slate-300 transition hover:border-rose-500/40 hover:text-rose-300 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={login}
+                    className="rounded-full border border-slate-700 bg-slate-900/70 px-4 py-1.5 text-sm font-semibold text-slate-200 transition hover:border-sky-400/50 hover:text-sky-300 cursor-pointer"
+                  >
+                    Sign In
+                  </button>
+                )}
+              </>
+            )}
+            <Link
+              href="/builder"
+              className="rounded-full border border-sky-500 bg-sky-500/10 px-5 py-2 text-sm font-semibold text-sky-300 transition hover:bg-sky-500 hover:text-slate-950"
+            >
+              Launch Builder
+            </Link>
+          </div>
         </header>
 
         <section className="mb-16 grid items-end gap-8 md:grid-cols-[1.15fr_0.85fr]">
