@@ -11,15 +11,19 @@ function createPrismaMock(overrides = {}) {
       findMany: async () => [],
       findUnique: async () => null,
       create: async () => ({
-        id: 'proj_1',
+        id: 'da39a3ee-5e6b-4b0d-9a6d-e4c16f2122aa',
         title: 'Demo',
         projectType: 'web',
         useAI: true,
         projectName: 'Demo',
+        tenantId: 'test_tenant_id',
+        userId: 'test_user_id',
       }),
       update: async () => ({
-        id: 'proj_1',
+        id: 'da39a3ee-5e6b-4b0d-9a6d-e4c16f2122aa',
         title: 'Demo',
+        tenantId: 'test_tenant_id',
+        userId: 'test_user_id',
       }),
       delete: async () => ({}),
       ...(overrides.project || {}),
@@ -32,12 +36,14 @@ function withMockedApp(prismaMock) {
   process.env.NODE_ENV = 'production';
 
   const prismaPath = require.resolve('../prismaClient');
+  const authMiddlewarePath = require.resolve('../middleware/authMiddleware');
   const serverPath = require.resolve('../server');
   const projectsPath = require.resolve('../routes/projects');
   const generatePath = require.resolve('../routes/generate');
   const questionsPath = require.resolve('../routes/questions');
 
   const originalPrismaModule = require.cache[prismaPath];
+  const originalAuthMiddlewareModule = require.cache[authMiddlewarePath];
   const originalServerModule = require.cache[serverPath];
   const originalProjectsModule = require.cache[projectsPath];
   const originalGenerateModule = require.cache[generatePath];
@@ -50,6 +56,21 @@ function withMockedApp(prismaMock) {
     exports: { prisma: prismaMock },
   };
 
+  require.cache[authMiddlewarePath] = {
+    id: authMiddlewarePath,
+    filename: authMiddlewarePath,
+    loaded: true,
+    exports: (req, res, next) => {
+      req.user = {
+        userId: 'test_user_id',
+        tenantId: 'test_tenant_id',
+        role: 'user',
+        type: 'user_token'
+      };
+      next();
+    }
+  };
+
   delete require.cache[serverPath];
   delete require.cache[projectsPath];
   delete require.cache[generatePath];
@@ -60,6 +81,9 @@ function withMockedApp(prismaMock) {
   function restore() {
     if (originalPrismaModule) require.cache[prismaPath] = originalPrismaModule;
     else delete require.cache[prismaPath];
+
+    if (originalAuthMiddlewareModule) require.cache[authMiddlewarePath] = originalAuthMiddlewareModule;
+    else delete require.cache[authMiddlewarePath];
 
     if (originalServerModule) require.cache[serverPath] = originalServerModule;
     else delete require.cache[serverPath];
@@ -162,6 +186,15 @@ async function main() {
   await runCase('generate/save falls back to preview_only when db fails', async () => {
     const prismaMock = createPrismaMock({
       project: {
+        findUnique: async () => ({
+          id: 'da39a3ee-5e6b-4b0d-9a6d-e4c16f2122aa',
+          tenantId: 'test_tenant_id',
+          userId: 'test_user_id',
+          title: 'Demo',
+          projectType: 'web',
+          useAI: true,
+          projectName: 'Demo',
+        }),
         update: async () => {
           throw new Error('database unavailable');
         },
@@ -175,7 +208,7 @@ async function main() {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            projectId: 'proj_1',
+            projectId: 'da39a3ee-5e6b-4b0d-9a6d-e4c16f2122aa',
             ...baseData,
             generationMode: 'balanced',
           }),
