@@ -4,8 +4,11 @@ const { optimizePrompt, validatePrompt, refinePrompt } = require('../services/la
 const { streamWorkflowExecution } = require('../utils/streamResponse');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { validateGeneratePayload } = require('../contract/projectContract');
+const authMiddleware = require('../middleware/authMiddleware');
+const { prisma } = require('../prismaClient');
 
 const router = express.Router();
+router.use(authMiddleware);
 
 /**
  * POST /api/generate/advanced
@@ -160,6 +163,26 @@ router.post('/validate', async (req, res) => {
 router.get('/insights/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      return sendError(res, {
+        status: 404,
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+      });
+    }
+
+    if (project.tenantId !== req.user.tenantId || project.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to access this project',
+      });
+    }
 
     return sendSuccess(res, {
       projectId,

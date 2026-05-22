@@ -3,8 +3,10 @@ const { prisma } = require('../prismaClient');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { validateCreateProjectPayload } = require('../contract/projectContract');
 const { serializeProjectRecord, serializeProjectRecords } = require('../utils/projectSerializer');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
+router.use(authMiddleware);
 
 function parsePagination(query) {
   const pageRaw = Number.parseInt(query.page, 10);
@@ -19,11 +21,16 @@ function parsePagination(query) {
 
 router.get('/', async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
+  const where = {
+    tenantId: req.user.tenantId,
+    userId: req.user.userId,
+  };
 
   try {
     const [total, projects] = await Promise.all([
-      prisma.project.count(),
+      prisma.project.count({ where }),
       prisma.project.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -61,6 +68,14 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    if (project.tenantId !== req.user.tenantId || project.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to access this project',
+      });
+    }
+
     return sendSuccess(res, serializeProjectRecord(project));
   } catch (error) {
     console.error('GET /api/projects/:id failed:', error);
@@ -86,7 +101,11 @@ router.post('/', async (req, res) => {
 
   try {
     const project = await prisma.project.create({
-      data: validation.data,
+      data: {
+        ...validation.data,
+        tenantId: req.user.tenantId,
+        userId: req.user.userId,
+      },
     });
 
     return sendSuccess(res, serializeProjectRecord(project), 201);
@@ -117,6 +136,26 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
+    const existingProject = await prisma.project.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingProject) {
+      return sendError(res, {
+        status: 404,
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+      });
+    }
+
+    if (existingProject.tenantId !== req.user.tenantId || existingProject.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to modify this project',
+      });
+    }
+
     const project = await prisma.project.update({
       where: { id: req.params.id },
       data: validation.data,
@@ -137,6 +176,26 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    const existingProject = await prisma.project.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!existingProject) {
+      return sendError(res, {
+        status: 404,
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+      });
+    }
+
+    if (existingProject.tenantId !== req.user.tenantId || existingProject.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to delete this project',
+      });
+    }
+
     await prisma.project.delete({
       where: { id: req.params.id },
     });

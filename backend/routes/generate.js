@@ -7,8 +7,10 @@ const { safeJsonStringify, safeJsonParse } = require('../utils/safeJson');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { serializeProjectRecord } = require('../utils/projectSerializer');
 const { createMemoryRateLimiter } = require('../middleware/rateLimit');
+const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
+router.use(authMiddleware);
 
 const generationLimiter = createMemoryRateLimiter({
   windowMs: 60 * 1000,
@@ -119,6 +121,26 @@ router.post('/save', async (req, res) => {
   const { projectId, ...projectData } = validation.data;
 
   try {
+    const existingProject = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+
+    if (!existingProject) {
+      return sendError(res, {
+        status: 404,
+        code: 'PROJECT_NOT_FOUND',
+        message: 'Project not found',
+      });
+    }
+
+    if (existingProject.tenantId !== req.user.tenantId || existingProject.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to modify this project',
+      });
+    }
+
     const generatedPrompt = generatePrompt(projectData);
     const recommendations = generateRecommendations(projectData);
     const persistedProjectData = pickPersistedProjectData(projectData);
@@ -179,6 +201,14 @@ router.get('/:projectId', async (req, res) => {
         status: 404,
         code: 'PROJECT_NOT_FOUND',
         message: 'Project not found',
+      });
+    }
+
+    if (project.tenantId !== req.user.tenantId || project.userId !== req.user.userId) {
+      return sendError(res, {
+        status: 403,
+        code: 'FORBIDDEN',
+        message: 'You do not have permission to access this project',
       });
     }
 
