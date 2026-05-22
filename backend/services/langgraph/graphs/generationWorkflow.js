@@ -1,8 +1,8 @@
 const { StateGraph, START, END } = require('@langchain/langgraph');
 const { optimizePrompt, validatePrompt } = require('../langchain/chains/promptChain');
 const { getRecommendations, quickValidate } = require('../langchain/agents/recommendationAgent');
-const { generatePrompt } = require('../../utils/promptGenerator');
-const { generateRecommendations } = require('../../utils/recommendations');
+const { generatePrompt } = require('../../../utils/promptGenerator');
+const { generateRecommendations } = require('../../../utils/recommendations');
 
 // Define the state schema
 class GenerationState {
