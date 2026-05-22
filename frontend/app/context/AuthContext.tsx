@@ -2,28 +2,43 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
+interface UserProfile {
+  id: string;
+  email: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+interface RishirajAuthClient {
+  isAuthenticated: boolean;
+  user?: UserProfile;
+  showLoginModal: () => void;
+  logout: () => Promise<void>;
+  getProfile: () => Promise<UserProfile>;
+}
+
 interface AuthContextType {
-  user: any;
+  user: UserProfile | null;
   isAuthenticated: boolean;
   loading: boolean;
   login: () => void;
   logout: () => Promise<void>;
-  authClient: any;
+  authClient: RishirajAuthClient | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [authClient, setAuthClient] = useState<any>(null);
+  const [authClient, setAuthClient] = useState<RishirajAuthClient | null>(null);
 
   useEffect(() => {
     const initAuth = () => {
       if (typeof window === 'undefined') return;
 
-      const RishirajAuthClass = (window as any).RishirajAuth;
+      const RishirajAuthClass = (window as unknown as { RishirajAuth: typeof RishirajAuthClient }).RishirajAuth;
       if (!RishirajAuthClass) {
         // If script hasn't loaded yet, poll in 100ms
         setTimeout(initAuth, 100);
@@ -31,10 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const client = new RishirajAuthClass({
+        const client = new (RishirajAuthClass as unknown as new (config: { serverUrl: string; tenantId: string; onLogin: (user: UserProfile) => void; onLogout: () => void }) => RishirajAuthClient)({
           serverUrl: process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'http://localhost:4000',
           tenantId: process.env.NEXT_PUBLIC_TENANT_ID || '',
-          onLogin: (usr: any) => {
+          onLogin: (usr: UserProfile) => {
             setUser(usr);
             setIsAuthenticated(true);
           },
@@ -51,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsAuthenticated(true);
         } else if (client.isAuthenticated) {
           client.getProfile()
-            .then((usr: any) => {
+            .then((usr: UserProfile) => {
               setUser(usr);
               setIsAuthenticated(true);
             })

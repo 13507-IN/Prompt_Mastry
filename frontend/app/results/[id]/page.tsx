@@ -118,7 +118,7 @@ export default function ResultsPage() {
     if (projectId) {
       fetchResults();
     }
-  }, [projectId, isPreviewMode, loadingAuth, isAuthenticated]);
+  }, [projectId, isPreviewMode, loadingAuth, isAuthenticated, fetchEnvelope]);
 
   const flattenedRecommendations = useMemo<RecommendationWithKey[]>(
     () =>
