@@ -32,7 +32,7 @@ function shouldShowQuestion(question: Question, formData: FormData): boolean {
 
 export default function BuilderPage() {
   const router = useRouter();
-  const { isAuthenticated, loading: loadingAuth, authClient } = useAuth();
+  const { isAuthenticated, loading: loadingAuth, authClient, login } = useAuth();
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<FormData>({ generationMode: 'balanced' });
   const [questions, setQuestions] = useState<Record<string, Question[]>>({});

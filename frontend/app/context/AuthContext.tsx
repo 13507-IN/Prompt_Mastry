@@ -15,6 +15,10 @@ interface RishirajAuthClient {
   showLoginModal: () => void;
   logout: () => Promise<void>;
   getProfile: () => Promise<UserProfile>;
+  tokens?: {
+    accessToken?: string;
+    refreshToken?: string;
+  } | null;
 }
 
 interface AuthContextType {
@@ -38,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initAuth = () => {
       if (typeof window === 'undefined') return;
 
-      const RishirajAuthClass = (window as unknown as { RishirajAuth: typeof RishirajAuthClient }).RishirajAuth;
+      const RishirajAuthClass = (window as any).RishirajAuth;
       if (!RishirajAuthClass) {
         // If script hasn't loaded yet, poll in 100ms
         setTimeout(initAuth, 100);
