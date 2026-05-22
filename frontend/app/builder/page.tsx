@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '../context/AuthContext';
 import type {
   FormData,
   ApiEnvelope,
@@ -31,11 +32,12 @@ function shouldShowQuestion(question: Question, formData: FormData): boolean {
 
 export default function BuilderPage() {
   const router = useRouter();
+  const { user, isAuthenticated, login, logout, loading: loadingAuth, authClient } = useAuth();
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<FormData>({ generationMode: 'balanced' });
   const [questions, setQuestions] = useState<Record<string, Question[]>>({});
   const [requiredByStep, setRequiredByStep] = useState<RequiredByStep>({ basics: [], frontend: [], backend: [], additional: [] });
-  const [loading, setLoading] = useState(true);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [resumeAvailable, setResumeAvailable] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -61,7 +63,7 @@ export default function BuilderPage() {
         console.error('Failed to fetch questions:', error);
         setSubmitError(error instanceof Error ? error.message : 'Failed to load questions');
       } finally {
-        setLoading(false);
+        setLoadingQuestions(false);
       }
     };
 
@@ -69,9 +71,9 @@ export default function BuilderPage() {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
+    if (loadingQuestions) return;
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, formData }));
-  }, [formData, step, loading]);
+  }, [formData, step, loadingQuestions]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -158,7 +160,18 @@ export default function BuilderPage() {
   };
 
   const fetchApi = async <T,>(url: string, init: RequestInit): Promise<ApiEnvelope<T>> => {
-    const response = await fetch(url, init);
+    const headers = {
+      ...init.headers,
+    } as Record<string, string>;
+
+    if (authClient?.tokens?.accessToken) {
+      headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+    }
+
+    const response = await fetch(url, {
+      ...init,
+      headers,
+    });
     const payload = (await response.json()) as ApiEnvelope<T>;
     if (!response.ok || !payload.success) {
       throw new Error(payload.error?.message || 'Request failed');
@@ -263,11 +276,46 @@ export default function BuilderPage() {
     }
   };
 
-  if (loading) {
+  if (loadingAuth || (loadingQuestions && Object.keys(questions).length === 0)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-6 py-4 text-slate-200">Loading questions...</div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-6 py-4 text-slate-200">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent mr-2 align-middle"></span>
+          Loading builder...
+        </div>
       </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(56,189,248,0.16),transparent_38%),radial-gradient(circle_at_85%_15%,rgba(14,165,233,0.10),transparent_32%)]" />
+        
+        <div className="relative mx-auto w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/60 p-6 md:p-8 text-center backdrop-blur-sm shadow-xl">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500/10 text-xl text-sky-400 mb-4">
+            🔒
+          </div>
+          <h1 className="text-2xl font-black text-white">Sign In Required</h1>
+          <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+            Create an account or sign in to build high-signal prompts, save projects, and get customized AI architecture recommendations.
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={login}
+              className="w-full rounded-xl bg-sky-500 py-3 font-semibold text-slate-950 transition hover:bg-sky-400 cursor-pointer animate-pulse"
+            >
+              Sign In / Sign Up
+            </button>
+            <Link
+              href="/"
+              className="w-full rounded-xl border border-slate-700 bg-slate-900/60 py-3 font-semibold text-slate-300 transition hover:border-slate-500"
+            >
+              Back to Home
+            </Link>
+          </div>
+        </div>
+      </main>
     );
   }
 

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import type { ApiEnvelope } from '@contract/contractTypes';
 
 interface Recommendation {
@@ -31,6 +32,8 @@ export default function ResultsPage() {
   const projectId = params.id as string;
   const isPreviewMode = projectId === 'preview';
 
+  const { isAuthenticated, loading: loadingAuth, authClient, login } = useAuth();
+
   const [prompt, setPrompt] = useState('');
   const [basePrompt, setBasePrompt] = useState('');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -43,8 +46,19 @@ export default function ResultsPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const fetchEnvelope = async <T,>(url: string): Promise<T> => {
-    const response = await fetch(url);
+  const fetchEnvelope = async <T,>(url: string, init?: RequestInit): Promise<T> => {
+    const headers = {
+      ...(init?.headers || {}),
+    } as Record<string, string>;
+
+    if (authClient?.tokens?.accessToken) {
+      headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+    }
+
+    const response = await fetch(url, {
+      ...init,
+      headers,
+    });
     const payload = (await response.json()) as ApiEnvelope<T>;
     if (!response.ok || !payload.success || !payload.data) {
       throw new Error(payload.error?.message || 'Request failed');
@@ -53,6 +67,8 @@ export default function ResultsPage() {
   };
 
   useEffect(() => {
+    if (loadingAuth) return;
+
     const fetchResults = async () => {
       try {
         if (isPreviewMode) {
@@ -72,6 +88,11 @@ export default function ResultsPage() {
           if (parsed.status === 'preview_only') {
             setStatusMessage(`Preview mode enabled (${parsed.statusReason || 'generation only'}).`);
           }
+          return;
+        }
+
+        if (!isAuthenticated) {
+          setStatusMessage('Please sign in to view this project.');
           return;
         }
 
@@ -97,7 +118,7 @@ export default function ResultsPage() {
     if (projectId) {
       fetchResults();
     }
-  }, [projectId, isPreviewMode]);
+  }, [projectId, isPreviewMode, loadingAuth, isAuthenticated]);
 
   const flattenedRecommendations = useMemo<RecommendationWithKey[]>(
     () =>
@@ -185,9 +206,17 @@ export default function ResultsPage() {
       setRegenerating(true);
       setStatusMessage('');
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (authClient?.tokens?.accessToken) {
+        headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+      }
+
       const response = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(sourceData),
       });
       const payload = (await response.json()) as ApiEnvelope<{
@@ -212,11 +241,46 @@ export default function ResultsPage() {
     }
   };
 
-  if (loading) {
+  if (loadingAuth || (loading && projectId && !isPreviewMode)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-200">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-6 py-4">Loading your generated prompt...</div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-6 py-4">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent mr-2 align-middle"></span>
+          Loading your generated prompt...
+        </div>
       </div>
+    );
+  }
+
+  if (!isAuthenticated && !isPreviewMode) {
+    return (
+      <main className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(56,189,248,0.16),transparent_38%),radial-gradient(circle_at_85%_15%,rgba(14,165,233,0.10),transparent_32%)]" />
+
+        <div className="relative mx-auto w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/60 p-6 md:p-8 text-center backdrop-blur-sm shadow-xl">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500/10 text-xl text-sky-400 mb-4">
+            🔒
+          </div>
+          <h1 className="text-2xl font-black text-white">Sign In Required</h1>
+          <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+            Create an account or sign in to view this project, save changes, and get customized AI architecture recommendations.
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <button
+              onClick={login}
+              className="w-full rounded-xl bg-sky-500 py-3 font-semibold text-slate-950 transition hover:bg-sky-400 cursor-pointer animate-pulse"
+            >
+              Sign In / Sign Up
+            </button>
+            <Link
+              href="/"
+              className="w-full rounded-xl border border-slate-700 bg-slate-900/60 py-3 font-semibold text-slate-300 transition hover:border-slate-500"
+            >
+              Back to Home
+            </Link>
+          </div>
+        </div>
+      </main>
     );
   }
 
