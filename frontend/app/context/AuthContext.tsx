@@ -39,13 +39,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authClient, setAuthClient] = useState<RishirajAuthClient | null>(null);
 
   useEffect(() => {
-    const initAuth = () => {
+    const initAuth = (attempts = 0) => {
       if (typeof window === 'undefined') return;
 
       const RishirajAuthClass = (window as any).RishirajAuth;
       if (!RishirajAuthClass) {
+        if (attempts > 50) {
+          console.error('RishirajAuth script failed to load. Is the auth server running?');
+          setLoading(false);
+          return;
+        }
         // If script hasn't loaded yet, poll in 100ms
-        setTimeout(initAuth, 100);
+        setTimeout(() => initAuth(attempts + 1), 100);
         return;
       }
 
