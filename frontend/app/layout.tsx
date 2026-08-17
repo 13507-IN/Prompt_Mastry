@@ -27,7 +27,7 @@ export default function RootLayout({
           href={`${authUrl}/sdk/rishiraj-auth-modal.css`}
         />
       </head>
-      <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-950">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-50 text-slate-900 selection:bg-sky-200 selection:text-sky-900">
         <Script
           src={`${authUrl}/sdk/rishiraj-auth.js`}
           strategy="beforeInteractive"
