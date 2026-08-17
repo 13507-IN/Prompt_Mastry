@@ -49,7 +49,7 @@ export default function BuilderPage() {
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
         const response = await fetch(`${apiUrl}/api/questions`);
         const payload = (await response.json()) as ApiEnvelope<QuestionsApiResponse>;
 
@@ -189,7 +189,7 @@ export default function BuilderPage() {
 
     try {
       setSubmitting(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
 
       const createPayload = await fetchApi<{ id: string }>(`${apiUrl}/api/projects`, {
         method: 'POST',
@@ -244,7 +244,7 @@ export default function BuilderPage() {
       console.warn('Create/save flow failed, attempting preview generation.', error);
 
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
         const previewPayload = await fetchApi<{
           prompt: string;
           recommendations: unknown[];

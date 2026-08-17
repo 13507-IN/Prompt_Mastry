@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const client = new (RishirajAuthClass as unknown as new (config: { serverUrl: string; tenantId: string; onLogin: (user: UserProfile) => void; onLogout: () => void }) => RishirajAuthClient)({
-          serverUrl: process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'http://localhost:4000',
+          serverUrl: process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'https://rishiraj-auth.onrender.com',
           tenantId: process.env.NEXT_PUBLIC_TENANT_ID || '',
           onLogin: (usr: UserProfile) => {
             setUser(usr);

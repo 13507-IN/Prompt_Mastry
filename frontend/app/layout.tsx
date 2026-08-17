@@ -13,7 +13,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const authUrl = process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'http://localhost:4000';
+  const authUrl = process.env.NEXT_PUBLIC_RISHIRAJ_AUTH_URL || 'https://rishiraj-auth.onrender.com';
 
   return (
     <html

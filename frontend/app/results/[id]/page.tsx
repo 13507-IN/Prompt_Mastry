@@ -96,7 +96,7 @@ export default function ResultsPage() {
           return;
         }
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
         const generated = await fetchEnvelope<{ prompt: string; recommendations: Recommendation[] }>(`${apiUrl}/api/generate/${projectId}`);
         setPrompt(generated.prompt || '');
         setBasePrompt(generated.prompt || '');
@@ -205,7 +205,7 @@ export default function ResultsPage() {
     try {
       setRegenerating(true);
       setStatusMessage('');
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
