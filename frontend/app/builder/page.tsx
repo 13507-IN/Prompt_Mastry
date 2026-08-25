@@ -51,7 +51,13 @@ export default function BuilderPage() {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
         const response = await fetch(`${apiUrl}/api/questions`);
-        const payload = (await response.json()) as ApiEnvelope<QuestionsApiResponse>;
+        const text = await response.text();
+        let payload: ApiEnvelope<QuestionsApiResponse>;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          throw new Error(`Server error (HTTP ${response.status}). backend endpoint returned HTML/text instead of JSON.`);
+        }
 
         if (!response.ok || !payload.success || !payload.data) {
           throw new Error(payload.error?.message || 'Failed to load questions');
@@ -172,7 +178,13 @@ export default function BuilderPage() {
       ...init,
       headers,
     });
-    const payload = (await response.json()) as ApiEnvelope<T>;
+    const text = await response.text();
+    let payload: ApiEnvelope<T>;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`Server error (HTTP ${response.status}). backend endpoint returned HTML/text instead of JSON.`);
+    }
     if (!response.ok || !payload.success) {
       throw new Error(payload.error?.message || 'Request failed');
     }

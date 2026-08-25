@@ -59,7 +59,13 @@ export default function ResultsPage() {
       ...init,
       headers,
     });
-    const payload = (await response.json()) as ApiEnvelope<T>;
+    const text = await response.text();
+    let payload: ApiEnvelope<T>;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`Server error (HTTP ${response.status}). backend endpoint returned HTML/text instead of JSON.`);
+    }
     if (!response.ok || !payload.success || !payload.data) {
       throw new Error(payload.error?.message || 'Request failed');
     }
@@ -219,10 +225,16 @@ export default function ResultsPage() {
         headers,
         body: JSON.stringify(sourceData),
       });
-      const payload = (await response.json()) as ApiEnvelope<{
+      const text = await response.text();
+      let payload: ApiEnvelope<{
         prompt: string;
         recommendations: Recommendation[];
       }>;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error(`Server error (HTTP ${response.status}). backend endpoint returned HTML/text instead of JSON.`);
+      }
 
       if (!response.ok || !payload.success || !payload.data) {
         throw new Error(payload.error?.message || 'Regeneration failed');
