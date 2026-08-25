@@ -1,11 +1,35 @@
 const express = require('express');
-const { executeGenerationWorkflow } = require('../services/langgraph/graphs/generationWorkflow');
-const { optimizePrompt, validatePrompt, refinePrompt } = require('../services/langchain/chains/promptChain');
-const { streamWorkflowExecution } = require('../utils/streamResponse');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { validateGeneratePayload } = require('../contract/projectContract');
 const authMiddleware = require('../middleware/authMiddleware');
 const { prisma } = require('../prismaClient');
+
+// Lazy-load heavy LangChain/LangGraph modules to prevent server crash if they
+// fail to import (e.g. on Vercel serverless where bundling can break ESM deps).
+let _generationWorkflow;
+let _promptChain;
+let _streamResponse;
+
+function getGenerationWorkflow() {
+  if (!_generationWorkflow) {
+    _generationWorkflow = require('../services/langgraph/graphs/generationWorkflow');
+  }
+  return _generationWorkflow;
+}
+
+function getPromptChain() {
+  if (!_promptChain) {
+    _promptChain = require('../services/langchain/chains/promptChain');
+  }
+  return _promptChain;
+}
+
+function getStreamResponse() {
+  if (!_streamResponse) {
+    _streamResponse = require('../utils/streamResponse');
+  }
+  return _streamResponse;
+}
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -26,6 +50,7 @@ router.post('/advanced', async (req, res) => {
       });
     }
 
+    const { executeGenerationWorkflow } = getGenerationWorkflow();
     const result = await executeGenerationWorkflow(req.body);
     return sendSuccess(res, {
       prompt: result.prompt,
@@ -60,6 +85,8 @@ router.post('/stream', async (req, res) => {
       });
     }
 
+    const { streamWorkflowExecution } = getStreamResponse();
+    const { executeGenerationWorkflow } = getGenerationWorkflow();
     await streamWorkflowExecution(res, executeGenerationWorkflow, req.body);
   } catch (error) {
     console.error('Stream generation error:', error);
@@ -83,6 +110,7 @@ router.post('/optimize', async (req, res) => {
       });
     }
 
+    const { optimizePrompt } = getPromptChain();
     const result = await optimizePrompt(prompt, context || {});
     return sendSuccess(res, {
       optimizedPrompt: result.optimizedPrompt,
@@ -115,6 +143,7 @@ router.post('/refine', async (req, res) => {
       });
     }
 
+    const { refinePrompt } = getPromptChain();
     const result = await refinePrompt(currentPrompt, feedback);
     return sendSuccess(res, {
       refinedPrompt: result.refinedPrompt,
@@ -143,6 +172,7 @@ router.post('/validate', async (req, res) => {
       });
     }
 
+    const { validatePrompt } = getPromptChain();
     const result = await validatePrompt(prompt, context || {});
     return sendSuccess(res, {
       assessment: result.assessment,
