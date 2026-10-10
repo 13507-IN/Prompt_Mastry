@@ -50,7 +50,14 @@ export default function BuilderPage() {
     const fetchQuestions = async () => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://prompt-mastry.vercel.app/_/backend';
-        const response = await fetch(`${apiUrl}/api/questions`);
+        const headers: Record<string, string> = {};
+        if (authClient?.tokens?.accessToken) {
+          headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+        } else if (process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY) {
+          headers['x-api-key'] = process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY;
+        }
+
+        const response = await fetch(`${apiUrl}/api/questions`, { headers });
         const text = await response.text();
         let payload: ApiEnvelope<QuestionsApiResponse>;
         try {
@@ -172,6 +179,8 @@ export default function BuilderPage() {
 
     if (authClient?.tokens?.accessToken) {
       headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+    } else if (process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY) {
+      headers['x-api-key'] = process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY;
     }
 
     const response = await fetch(url, {

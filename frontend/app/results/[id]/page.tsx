@@ -53,6 +53,8 @@ export default function ResultsPage() {
 
     if (authClient?.tokens?.accessToken) {
       headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+    } else if (process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY) {
+      headers['x-api-key'] = process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY;
     }
 
     const response = await fetch(url, {
@@ -218,6 +220,8 @@ export default function ResultsPage() {
       };
       if (authClient?.tokens?.accessToken) {
         headers['Authorization'] = `Bearer ${authClient.tokens.accessToken}`;
+      } else if (process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY) {
+        headers['x-api-key'] = process.env.NEXT_PUBLIC_RISHIRAJ_API_KEY;
       }
 
       const response = await fetch(`${apiUrl}/api/generate`, {
